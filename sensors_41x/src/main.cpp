@@ -85,39 +85,47 @@ void setup(void) {
 }
 
 bool noiseDetect() {
-
+  return false;
 }
 
-bool tempDetect(float temp) {
-  float lowerLimit = 18;
-  float upperLimit = 0;
+/**
+ * Checks temperature against upper and lower limits.
+ *
+ * @param temp current temperature reading
+ * @return integer, 0 for normal temperature, 1 for low temperature, 2 for high temperature
+ */
+int tempDetect(float temp) {
+  float lowerLimit = 18;  // https://www.labour.gov.on.ca/english/hs/faqs/workplace.php#temperature
+  float upperLimit = 35;  // https://www.ccohs.ca/oshanswers/phys_agents/heat_health.html
   Serial.print("Temperature: ");
   Serial.print(temp);
   Serial.println(" degC");
 
-  if (temp >= lowerLimit) {
-
+  if (temp <= lowerLimit) {
+    Serial.println("Temperature too cold");
+    return 1;
   }
-  else if(temp <= upperLimit) {
-
+  else if(temp >= upperLimit) {
+    Serial.println("Temperature too hot");
+    return 2;
   }
-
-  /* https://www.labour.gov.on.ca/english/hs/faqs/workplace.php#temperature
-     for lower temperature limt*/
+  return 0;
 }
 
-bool fallDetect() {
-/* Get new sensor events with the readings */
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+/**
+ * Detects falls using x, y and z accelerations and gyro data.
+ *
+ * @param event struct holding sensor readings
+ * @return boolean, true if a fall has been detected.
+ */
+bool fallDetect(sensors_event_t  *event) {
   float magnitude = 0;
   float lastReading = 0;
   float high_threshhold = 12;
   float changeAcc = 0;
   // change in acceleration, hold one reading and compare or look at mulitple readings for trend
 
-  magnitude = sqrt(sq(a.acceleration.x) +sq(a.acceleration.y) + sq(a.acceleration.z));
-  lastReading = magnitude;
+  magnitude = sqrt(sq(event->acceleration.x) +sq(event->acceleration.y) + sq(event->acceleration.z));
   changeAcc = abs(magnitude - lastReading);
 
   if(magnitude > high_threshhold) {
@@ -131,15 +139,20 @@ bool fallDetect() {
   Serial.print(magnitude);
   Serial.println(" m/s^2");
   lastReading = magnitude;
-  
-  tempDetect(temp.temperature);
-
-
   return false;
 }
 
+void checkSensors() {
+  /* Get new sensor events with the readings */
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  fallDetect(&a);
+  tempDetect(temp.temperature);
+}
+
 void loop() {
-  fallDetect();
+  checkSensors();
   delay(500);
   
 }
