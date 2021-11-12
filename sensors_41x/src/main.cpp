@@ -4,6 +4,8 @@
 #include <Wire.h>
 
 Adafruit_MPU6050 mpu;
+int sound_digital = 0;
+int sound_analog = 4;
 
 void setup(void) {
   Serial.begin(115200);
@@ -81,10 +83,25 @@ void setup(void) {
   }
 
   Serial.println("");
+
+  // Initialize pins for sound sensor
+  pinMode(sound_digital, INPUT);  
   delay(100);
 }
 
 bool noiseDetect() {
+  int val_digital = digitalRead(sound_digital);
+
+  // Serial.print(val_analog);
+  // Serial.print("\t");
+  // Serial.println(val_digital);
+
+  if (val_digital == HIGH)
+  {
+    Serial.println("Noise level high");
+    return true;
+  }
+
   return false;
 }
 
@@ -121,14 +138,14 @@ int tempDetect(float temp) {
 bool fallDetect(sensors_event_t  *event) {
   float magnitude = 0;
   float lastReading = 0;
-  float high_threshhold = 12;
+  float high_threshhold = 20; // change in acc threshold
   float changeAcc = 0;
   // change in acceleration, hold one reading and compare or look at mulitple readings for trend
 
   magnitude = sqrt(sq(event->acceleration.x) +sq(event->acceleration.y) + sq(event->acceleration.z));
   changeAcc = abs(magnitude - lastReading);
 
-  if(magnitude > high_threshhold) {
+  if(changeAcc > high_threshhold) {
     Serial.println("Fall Detected");
     Serial.println("Change in Acceleration");
     Serial.print(changeAcc);
@@ -149,6 +166,7 @@ void checkSensors() {
 
   fallDetect(&a);
   tempDetect(temp.temperature);
+  noiseDetect();
 }
 
 void loop() {
