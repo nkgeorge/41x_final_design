@@ -2,13 +2,13 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <math.h> 
 
 Adafruit_MPU6050 mpu;
-int sound_digital = 0;
-int sound_analog = 4;
+int sound_digital = 4;
+int sound_analog = 0;
 
-void setup(void) {
-  Serial.begin(115200);
+bool setup_mpu() {
   while (!Serial)
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
 
@@ -17,9 +17,8 @@ void setup(void) {
   // Try to initialize!
   if (!mpu.begin()) {
     Serial.println("Failed to find MPU6050 chip");
-    while (1) {
-      delay(10);
-    }
+    delay(100);
+    return false;
   }
   Serial.println("MPU6050 Found!");
 
@@ -83,15 +82,21 @@ void setup(void) {
   }
 
   Serial.println("");
+  return true;
+}
+
+void setup(void) {
+  Serial.begin(115200);
+  setup_mpu();
 
   // Initialize pins for sound sensor
-  pinMode(sound_digital, INPUT);  
+  pinMode(sound_digital, INPUT);
   delay(100);
 }
 
 bool noiseDetect() {
   int val_digital = digitalRead(sound_digital);
-
+  int val_analog = analogRead(sound_analog);
   // Serial.print(val_analog);
   // Serial.print("\t");
   // Serial.println(val_digital);
@@ -101,10 +106,12 @@ bool noiseDetect() {
     Serial.println("Noise level high");
     return true;
   }
-
+  Serial.println(val_analog);
   return false;
 }
-
+bool compareFloats (float a, float b, float EPSILON) {
+  return fabs(a - b) < EPSILON;
+}
 /**
  * Checks temperature against upper and lower limits.
  *
@@ -114,6 +121,7 @@ bool noiseDetect() {
 int tempDetect(float temp) {
   float lowerLimit = 18;  // https://www.labour.gov.on.ca/english/hs/faqs/workplace.php#temperature
   float upperLimit = 35;  // https://www.ccohs.ca/oshanswers/phys_agents/heat_health.html
+  float init_val = 36.53;
   Serial.print("Temperature: ");
   Serial.print(temp);
   Serial.println(" degC");
@@ -122,10 +130,15 @@ int tempDetect(float temp) {
     Serial.println("Temperature too cold");
     return 1;
   }
-  else if(temp >= upperLimit) {
+  else if (compareFloats(temp, init_val, 0.001)) { //  if nothing is read from MPU6050
+    return 3;
+  }
+  else if (temp >= upperLimit) {
     Serial.println("Temperature too hot");
     return 2;
   }
+
+
   return 0;
 }
 
@@ -135,27 +148,31 @@ int tempDetect(float temp) {
  * @param event struct holding sensor readings
  * @return boolean, true if a fall has been detected.
  */
-bool fallDetect(sensors_event_t  *event) {
-  float magnitude = 0;
-  float lastReading = 0;
+bool fallDetect(sensors_event_t  *event_a, sensors_event_t  *event_g) {
+  float acc_magnitude, g_magnitude = 0;
+  float acc_lastReading, g_lastReading = 0;
   float high_threshhold = 20; // change in acc threshold
   float changeAcc = 0;
   // change in acceleration, hold one reading and compare or look at mulitple readings for trend
+  // accelerometer gives around 11m/s^2 for sitting down
+  acc_magnitude = sqrt(sq(event_a->acceleration.x) +sq(event_a->acceleration.y) + sq(event_a->acceleration.z));
+  g_magnitude = sqrt(sq(event_g->gyro.x) +sq(event_g->gyro.y) + sq(event_g->gyro.z));
+  // changeAcc = abs(acc_magnitude - acc_lastReading);
 
-  magnitude = sqrt(sq(event->acceleration.x) +sq(event->acceleration.y) + sq(event->acceleration.z));
-  changeAcc = abs(magnitude - lastReading);
-
-  if(changeAcc > high_threshhold) {
+  if (changeAcc > high_threshhold) {
     Serial.println("Fall Detected");
     Serial.println("Change in Acceleration");
     Serial.print(changeAcc);
-    Serial.println(" m/s^2");
     return true;
   }
+
   Serial.print("Magnitude of Acceleration: ");
-  Serial.print(magnitude);
-  Serial.println(" m/s^2");
-  lastReading = magnitude;
+  Serial.println(acc_magnitude);
+  acc_lastReading = acc_magnitude;
+
+  Serial.print("Magnitude of Angular Velocity: ");
+  Serial.println(g_magnitude);
+  g_lastReading = g_magnitude;
   return false;
 }
 
@@ -164,13 +181,16 @@ void checkSensors() {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  fallDetect(&a);
-  tempDetect(temp.temperature);
-  noiseDetect();
+  fallDetect(&a, &g);
+
+  if (tempDetect(temp.temperature) == 3) {
+    while(!setup_mpu());
+  }
+
+  // noiseDetect();
 }
 
 void loop() {
   checkSensors();
   delay(500);
-  
 }
