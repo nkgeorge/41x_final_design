@@ -5,8 +5,7 @@
 #include <math.h> 
 
 Adafruit_MPU6050 mpu;
-int sound_digital = 4;
-int sound_analog = 0;
+int sound_analog = 15;
 
 bool setup_mpu() {
   while (!Serial)
@@ -90,28 +89,51 @@ void setup(void) {
   setup_mpu();
 
   // Initialize pins for sound sensor
-  pinMode(sound_digital, INPUT);
+  pinMode(sound_analog, INPUT);
   delay(100);
 }
 
+/**
+ * Samples noise sensor 9 times, chooses highest level and converts it to decibels using equation
+ * found through linear regresssion.
+ *
+ * @return boolean, true if noise level is over the threshold
+ */
 bool noiseDetect() {
-  int val_digital = digitalRead(sound_digital);
-  int val_analog = analogRead(sound_analog);
-  // Serial.print(val_analog);
-  // Serial.print("\t");
-  // Serial.println(val_digital);
+  int sensorValue = 0;
+  int maxVal = 0;
+  int i = 0;
+  int dB = 0;
 
-  if (val_digital == HIGH)
-  {
-    Serial.println("Noise level high");
+  for(i = 0; i < 9; i++) {
+    sensorValue = analogRead(15); 
+    if (sensorValue > maxVal) {
+      maxVal = sensorValue;
+    }
+    delay(100);
+  }
+
+  dB = (maxVal - 993.79) / 21.17;
+  if(dB >= 80) {
     return true;
   }
-  Serial.println(val_analog);
-  return false;
+  else {
+    return false;
+  }
 }
+
+/**
+ * Compares floats
+ *
+ * @param a the first float
+ * @param b the second float
+ * @param EPSILON the tolerance
+ * @return boolean, true if the difference is smaller than the tolerance
+ */
 bool compareFloats (float a, float b, float EPSILON) {
   return fabs(a - b) < EPSILON;
 }
+
 /**
  * Checks temperature against upper and lower limits.
  *
@@ -127,18 +149,14 @@ int tempDetect(float temp) {
   Serial.println(" degC");
 
   if (temp <= lowerLimit) {
-    Serial.println("Temperature too cold");
     return 1;
   }
-  else if (compareFloats(temp, init_val, 0.001)) { //  if nothing is read from MPU6050
+  else if (compareFloats(temp, init_val, 0.001)) {  // if nothing is read from MPU6050
     return 3;
   }
   else if (temp >= upperLimit) {
-    Serial.println("Temperature too hot");
     return 2;
   }
-
-
   return 0;
 }
 
@@ -151,16 +169,14 @@ int tempDetect(float temp) {
 bool fallDetect(sensors_event_t  *event_a, sensors_event_t  *event_g) {
   float acc_magnitude, g_magnitude = 0;
   float acc_lastReading, g_lastReading = 0;
-  float high_threshhold = 20; // change in acc threshold
+  float high_threshhold = 15; // change in acc threshold
   float changeAcc = 0;
-  // change in acceleration, hold one reading and compare or look at mulitple readings for trend
-  // accelerometer gives around 11m/s^2 for sitting down
+
   acc_magnitude = sqrt(sq(event_a->acceleration.x) +sq(event_a->acceleration.y) + sq(event_a->acceleration.z));
   g_magnitude = sqrt(sq(event_g->gyro.x) +sq(event_g->gyro.y) + sq(event_g->gyro.z));
-  // changeAcc = abs(acc_magnitude - acc_lastReading);
+  changeAcc = abs(acc_magnitude - acc_lastReading);
 
   if (changeAcc > high_threshhold) {
-    Serial.println("Fall Detected");
     Serial.println("Change in Acceleration");
     Serial.print(changeAcc);
     return true;
@@ -176,18 +192,33 @@ bool fallDetect(sensors_event_t  *event_a, sensors_event_t  *event_g) {
   return false;
 }
 
+/**
+ * Calls all sensor checking functions, and restarts set up if sensors are not found.
+ */
 void checkSensors() {
   /* Get new sensor events with the readings */
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
+  int tempReturn = 0;
 
-  fallDetect(&a, &g);
-
-  if (tempDetect(temp.temperature) == 3) {
-    while(!setup_mpu());
+  if (fallDetect(&a, &g)) {
+    Serial.println("Fall Detected");
   }
 
-  // noiseDetect();
+  tempReturn = tempDetect(temp.temperature);
+  if (tempReturn == 3) {
+    while(!setup_mpu());
+  }
+  else if (tempReturn == 1) {
+    Serial.println("Temperature too cold");
+  }
+  else if (tempReturn == 2) {
+    Serial.println("Temperature too hot");
+  }
+
+  if (noiseDetect()) {
+    Serial.println("Noise level high");
+  }
 }
 
 void loop() {
